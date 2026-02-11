@@ -21,8 +21,13 @@ desloppify scan --path src/
 desloppify status
 desloppify next
 
-Fix what it finds, then "desloppify resolve fixed <id>" and rescan. Use --lang python
-for Python projects. If you're Claude Code, also run:
+Fix what it finds, then "desloppify resolve fixed <id>" and rescan. For false positives:
+"desloppify resolve wontfix <id> --note 'reason'" (note is required — don't skip work).
+Keep going until all issues are resolved. If you notice anything wrong or confusing about
+desloppify itself, tell me and ask if I want you to log an issue. Use --lang python for
+Python projects.
+
+If you're Claude Code, also run:
 mkdir -p .claude/skills/desloppify && curl -sL https://raw.githubusercontent.com/peteromallet/desloppify/main/SKILL.md -o .claude/skills/desloppify/SKILL.md
 ```
 
