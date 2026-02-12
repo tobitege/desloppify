@@ -38,23 +38,21 @@ def cmd_resolve(args):
     print(f"\n  Score: {state['score']}/100{delta_str}" +
           c(f"  (strict: {state.get('strict_score', 0)}/100)", "dim"))
 
-    print(c("\n  ── Retro ──", "dim"))
-    print(c("  1. Was there a good loop here? Was anything too frictional?", "dim"))
-    print(c("  2. Could the process be improved? (batch-resolve, auto-fix, ignore patterns?)", "dim"))
-    print(c("  3. Were there related problems nearby we might have missed?", "dim"))
-    print(c("  4. Was the scope appropriate? Too narrow (missed nearby issues)? Too broad?", "dim"))
+    # Computed narrative: milestone + context for LLM
+    from ..narrative import compute_narrative
+    from ..cli import _resolve_lang
+    lang = _resolve_lang(args)
+    lang_name = lang.name if lang else None
+    narrative = compute_narrative(state, lang=lang_name)
+    if narrative.get("milestone"):
+        print(c(f"  → {narrative['milestone']}", "green"))
     print()
 
     _write_query({"command": "resolve", "patterns": args.patterns, "status": args.status,
                   "resolved": all_resolved, "count": len(all_resolved),
                   "score": state["score"], "strict_score": state.get("strict_score", 0),
                   "prev_score": prev_score,
-                  "retro": [
-                      "Was there a good loop? Anything frictional?",
-                      "Process improvements? (batch-resolve, auto-fix, ignore patterns?)",
-                      "Related problems nearby we might have missed?",
-                      "Was the scope appropriate? Too narrow or too broad?",
-                  ]})
+                  "narrative": narrative})
 
 
 def cmd_ignore_pattern(args):

@@ -92,8 +92,10 @@ def cmd_show(args):
         return
 
     # Always write structured query file
+    from ..narrative import compute_narrative
+    narrative = compute_narrative(state)
     payload = _build_show_payload(matches, pattern, status_filter)
-    _write_query({"command": "show", **payload})
+    _write_query({"command": "show", **payload, "narrative": narrative})
 
     # Optional: also write to a custom output file
     output_file = getattr(args, "output", None)

@@ -256,8 +256,27 @@ def merge_scan(state: dict, current_findings: list[dict], *,
         lang=lang, scan_path=scan_path, exclude=exclude)
     _recompute_stats(state)
 
-    chronic = sum(1 for f in existing.values()
-                  if f.get("reopen_count", 0) >= 2 and f["status"] == "open")
+    # Append scan history entry for trajectory tracking
+    history = state.setdefault("scan_history", [])
+    history.append({
+        "timestamp": now,
+        "objective_strict": state.get("objective_strict"),
+        "objective_score": state.get("objective_score"),
+        "open": state["stats"]["open"],
+        "diff_new": new_count,
+        "diff_resolved": auto_resolved,
+        "dimension_scores": {
+            name: {"score": ds["score"], "strict": ds.get("strict", ds["score"])}
+            for name, ds in state.get("dimension_scores", {}).items()
+        } if state.get("dimension_scores") else None,
+    })
+    if len(history) > 20:
+        state["scan_history"] = history[-20:]
+
+    # Detect chronic reopeners (findings that keep bouncing between resolved and open)
+    chronic = [f for f in existing.values()
+               if f.get("reopen_count", 0) >= 2 and f["status"] == "open"]
+
     return {
         "new": new_count, "auto_resolved": auto_resolved,
         "reopened": reopened_count, "total_current": len(current_ids),

@@ -5,7 +5,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-from ....utils import PROJECT_ROOT, SRC_PATH, c, print_table, rel, resolve_path
+from ....utils import PROJECT_ROOT, SRC_PATH, c, grep_files, print_table, rel, resolve_path
 from ....detectors.graph import detect_cycles, get_coupling_score, finalize_graph
 
 
@@ -14,21 +14,14 @@ def build_dep_graph(path: Path) -> dict[str, dict]:
 
     Returns {resolved_path: {"imports": set[str], "importers": set[str], "import_count": int, "importer_count": int}}
     """
-    # Single grep pass for all import/from lines (filtered by --exclude patterns)
-    from ....utils import run_grep
-    stdout = run_grep(
-        ["grep", "-rn", "--include=*.ts", "--include=*.tsx", "-E",
-         r"from\s+['\"]", str(path)]
-    )
+    from ....utils import find_ts_files
+    ts_files = find_ts_files(path)
+    hits = grep_files(r"from\s+['\"]", ts_files)
 
     graph: dict[str, dict] = defaultdict(lambda: {"imports": set(), "importers": set()})
     module_re = re.compile(r"""from\s+['"]([^'"]+)['"]""")
 
-    for line in stdout.splitlines():
-        parts = line.split(":", 2)
-        if len(parts) < 3:
-            continue
-        filepath, content = parts[0], parts[2]
+    for filepath, _lineno, content in hits:
         source_resolved = resolve_path(filepath)
         graph[source_resolved]  # ensure entry exists
 
@@ -142,27 +135,21 @@ def cmd_cycles(args):
 
 def build_dynamic_import_targets(path: Path, extensions: list[str]) -> set[str]:
     """Find files referenced by dynamic imports (import('...')) and side-effect imports."""
-    from ....utils import run_grep
+    from ....utils import find_source_files
     targets: set[str] = set()
-    include_args = [arg for ext in extensions for arg in (f"--include=*{ext}",)]
+    files = find_source_files(path, extensions)
 
-    stdout = run_grep(
-        ["grep", "-rn", *include_args, "-E",
-         r"import\s*\(\s*['\"]", str(path)]
-    )
+    hits = grep_files(r"import\s*\(\s*['\"]", files)
     module_re = re.compile(r"""import\s*\(\s*['"]([^'"]+)['"]""")
-    for line in stdout.splitlines():
-        m = module_re.search(line)
+    for _fp, _ln, content in hits:
+        m = module_re.search(content)
         if m:
             targets.add(m.group(1))
 
-    stdout2 = run_grep(
-        ["grep", "-rn", *include_args, "-E",
-         r"^import\s+['\"]", str(path)]
-    )
+    hits2 = grep_files(r"^import\s+['\"]", files)
     side_re = re.compile(r"""import\s+['"]([^'"]+)['"]""")
-    for line in stdout2.splitlines():
-        m = side_re.search(line)
+    for _fp, _ln, content in hits2:
+        m = side_re.search(content)
         if m:
             targets.add(m.group(1))
 

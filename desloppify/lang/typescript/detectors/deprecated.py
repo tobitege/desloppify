@@ -2,26 +2,21 @@
 
 import json
 import re
-import subprocess
 from pathlib import Path
 
-from ....utils import PROJECT_ROOT, SRC_PATH, c, print_table, rel, resolve_path
+from ....utils import (PROJECT_ROOT, SRC_PATH, c, grep_count_files, grep_files,
+                       print_table, rel, resolve_path)
 
 
 def detect_deprecated(path: Path) -> tuple[list[dict], int]:
-    result = subprocess.run(
-        ["grep", "-rn", "--include=*.ts", "--include=*.tsx", "-E",
-         r"@deprecated", str(path)],
-        capture_output=True, text=True, cwd=PROJECT_ROOT,
-    )
+    from ....utils import find_ts_files
+    ts_files = find_ts_files(path)
+    hits = grep_files(r"@deprecated", ts_files)
+
     entries = []
     seen_symbols = set()  # Deduplicate by file+symbol
-    for line in result.stdout.splitlines():
-        parts = line.split(":", 2)
-        if len(parts) < 3:
-            continue
-        filepath, lineno, content = parts[0], parts[1], parts[2]
-        symbol, kind = _extract_deprecated_symbol(filepath, int(lineno), content)
+    for filepath, lineno, content in hits:
+        symbol, kind = _extract_deprecated_symbol(filepath, lineno, content)
         if not symbol:
             continue
         # Deduplicate (same symbol in same file, e.g., multiple @deprecated on interface props)
@@ -32,7 +27,7 @@ def detect_deprecated(path: Path) -> tuple[list[dict], int]:
         importers = _count_importers(symbol, filepath) if kind == "top-level" else -1
         entries.append({
             "file": filepath,
-            "line": int(lineno),
+            "line": lineno,
             "symbol": symbol,
             "kind": kind,
             "importers": importers,
@@ -111,13 +106,12 @@ def _extract_deprecated_symbol(filepath: str, lineno: int, content: str) -> tupl
 def _count_importers(name: str, declaring_file: str) -> int:
     if not name:
         return -1
-    result = subprocess.run(
-        ["grep", "-rl", "--include=*.ts", "--include=*.tsx", "-w", name, str(SRC_PATH)],
-        capture_output=True, text=True, cwd=PROJECT_ROOT,
-    )
+    from ....utils import find_ts_files
+    ts_files = find_ts_files(SRC_PATH)
+    matching = grep_count_files(name, ts_files, word_boundary=True)
     declaring_resolved = resolve_path(declaring_file)
     count = 0
-    for match_file in result.stdout.strip().splitlines():
+    for match_file in matching:
         if resolve_path(match_file) != declaring_resolved:
             count += 1
     return count

@@ -11,7 +11,6 @@ Generates an interactive treemap where:
 D3_CDN_URL = "https://d3js.org/d3.v7.min.js"
 
 import json
-import subprocess
 from collections import defaultdict
 from pathlib import Path
 
@@ -20,14 +19,10 @@ from .utils import PROJECT_ROOT, c, rel
 
 def _collect_file_data(path: Path) -> list[dict]:
     """Collect LOC for all TS/TSX files."""
-    result = subprocess.run(
-        ["find", str(path), "-name", "*.ts", "-o", "-name", "*.tsx"],
-        capture_output=True, text=True, cwd=PROJECT_ROOT,
-    )
+    from .utils import find_ts_files
+    ts_files = find_ts_files(path)
     files = []
-    for filepath in result.stdout.strip().splitlines():
-        if not filepath or "node_modules" in filepath:
-            continue
+    for filepath in ts_files:
         try:
             p = Path(filepath) if Path(filepath).is_absolute() else PROJECT_ROOT / filepath
             content = p.read_text()

@@ -1,15 +1,13 @@
 """Dead exports detection (zero external importers)."""
 
 import json
-import os
 import re
-import subprocess
 import sys
-import tempfile
 from collections import defaultdict
 from pathlib import Path
 
-from ....utils import PROJECT_ROOT, SRC_PATH, c, print_table, rel, resolve_path
+from ....utils import (PROJECT_ROOT, SRC_PATH, c, grep_files,
+                       grep_files_containing, print_table, rel, resolve_path)
 
 
 EXPORT_DECL_RE = re.compile(
@@ -17,61 +15,29 @@ EXPORT_DECL_RE = re.compile(
     re.MULTILINE,
 )
 
+_EXPORT_GREP_PAT = r"^export\s+(declare\s+)?(const|let|function|class|type|interface|enum)\s+\w+"
+
 
 def _build_reference_index(search_path: Path, names: set[str]) -> dict[str, set[str]]:
-    """Build a map of symbol name -> set of files that contain it (word-boundary match).
-
-    Uses grep -Fw with a pattern file for a single efficient pass.
-    """
+    """Build a map of symbol name -> set of files that contain it (word-boundary match)."""
     if not names:
         return {}
-    # Write all names to a temp file for grep -Fw
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-        f.write("\n".join(sorted(names)))
-        patterns_file = f.name
-    try:
-        result = subprocess.run(
-            ["grep", "-rlFw", "--include=*.ts", "--include=*.tsx",
-             "-f", patterns_file, str(search_path)],
-            capture_output=True, text=True, cwd=PROJECT_ROOT,
-        )
-        # -Fw gives us files that match ANY pattern. We need per-name file lists.
-        # So we do a second pass: for each matching file, grep for which names it contains.
-        matching_files = [f for f in result.stdout.strip().splitlines() if f]
-        if not matching_files:
-            return {}
-
-        name_to_files: dict[str, set[str]] = defaultdict(set)
-        # For each matching file, find which of our names it references
-        # Batch: grep -oFw from the patterns file against each file
-        for filepath in matching_files:
-            res = subprocess.run(
-                ["grep", "-oFw", "-f", patterns_file, filepath],
-                capture_output=True, text=True, cwd=PROJECT_ROOT,
-            )
-            resolved = resolve_path(filepath)
-            for match_name in set(res.stdout.strip().splitlines()):
-                if match_name in names:
-                    name_to_files[match_name].add(resolved)
-        return name_to_files
-    finally:
-        os.unlink(patterns_file)
+    from ....utils import find_ts_files
+    ts_files = find_ts_files(search_path)
+    raw = grep_files_containing(names, ts_files, word_boundary=True)
+    # Convert to resolved paths for comparison
+    return {name: {resolve_path(f) for f in files} for name, files in raw.items()}
 
 
 def detect_dead_exports(path: Path) -> tuple[list[dict], int]:
+    from ....utils import find_ts_files
+
     # Phase 1: Find all export declarations in the scoped path
-    result = subprocess.run(
-        ["grep", "-rn", "--include=*.ts", "--include=*.tsx", "-E",
-         r"^export\s+(declare\s+)?(const|let|function|class|type|interface|enum)\s+\w+",
-         str(path)],
-        capture_output=True, text=True, cwd=PROJECT_ROOT,
-    )
+    ts_files = find_ts_files(path)
+    hits = grep_files(_EXPORT_GREP_PAT, ts_files)
+
     exports = []
-    for line in result.stdout.splitlines():
-        parts = line.split(":", 2)
-        if len(parts) < 3:
-            continue
-        filepath, lineno, content = parts[0], parts[1], parts[2]
+    for filepath, lineno, content in hits:
         basename = Path(filepath).name
         if basename in ("index.ts", "index.tsx"):
             continue
@@ -81,7 +47,7 @@ def detect_dead_exports(path: Path) -> tuple[list[dict], int]:
         name = m.group(1)
         if len(name) <= 2:
             continue
-        exports.append({"file": filepath, "line": int(lineno), "name": name})
+        exports.append({"file": filepath, "line": lineno, "name": name})
 
     total_exports = len(exports)
     if not exports:

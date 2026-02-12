@@ -29,12 +29,19 @@ def cmd_next(args):
         _write_query({"command": "next", "items": [], "score": state.get("score", 0)})
         return
 
+    from ..narrative import compute_narrative
+    from ..cli import _resolve_lang
+    lang = _resolve_lang(args)
+    lang_name = lang.name if lang else None
+    narrative = compute_narrative(state, lang=lang_name)
+
     _write_query({
         "command": "next",
         "score": state.get("score", 0),
         "items": [{"id": f["id"], "tier": f["tier"], "confidence": f["confidence"],
                    "file": f["file"], "summary": f["summary"], "detail": f.get("detail", {})}
                   for f in items],
+        "narrative": narrative,
     })
 
     output_file = getattr(args, "output", None)

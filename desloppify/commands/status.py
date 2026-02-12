@@ -101,6 +101,13 @@ def cmd_status(args):
     if dim_scores:
         _show_focus_suggestion(dim_scores, state)
 
+    # Computed narrative headline
+    from ..narrative import compute_narrative
+    narrative = compute_narrative(state)
+    if narrative.get("headline"):
+        print(c(f"  → {narrative['headline']}", "cyan"))
+        print()
+
     ignores = state.get("config", {}).get("ignore", [])
     if ignores:
         print(c(f"\n  Ignore list ({len(ignores)}):", "dim"))
@@ -115,7 +122,8 @@ def cmd_status(args):
                   "last_scan": state.get("last_scan"),
                   "by_tier": by_tier, "ignores": ignores,
                   "potentials": state.get("potentials"),
-                  "codebase_metrics": state.get("codebase_metrics")})
+                  "codebase_metrics": state.get("codebase_metrics"),
+                  "narrative": narrative})
 
 
 def _show_dimension_table(dim_scores: dict):

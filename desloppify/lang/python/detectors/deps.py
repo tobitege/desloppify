@@ -4,7 +4,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-from ....utils import PROJECT_ROOT, resolve_path
+from ....utils import PROJECT_ROOT, grep_files, resolve_path
 from ....detectors.graph import finalize_graph
 
 
@@ -22,12 +22,9 @@ def build_dep_graph(path: Path) -> dict:
 
     Returns {resolved_path: {"imports": set, "importers": set, "import_count", "importer_count"}}
     """
-    # Single grep pass for all import lines (filtered by --exclude patterns)
-    from ....utils import run_grep
-    stdout = run_grep(
-        ["grep", "-rn", "--include=*.py", "-E",
-         r"^\s*(import |from )", str(path)]
-    )
+    from ....utils import find_py_files
+    py_files = find_py_files(path)
+    hits = grep_files(r"^\s*(import |from )", py_files)
 
     graph: dict[str, dict] = defaultdict(lambda: {
         "imports": set(), "importers": set(), "deferred_imports": set(),
@@ -37,12 +34,8 @@ def build_dep_graph(path: Path) -> dict:
     from_re = re.compile(r"^from\s+(\.+\w*(?:\.\w+)*|\w+(?:\.\w+)*)\s+import\s+(.+)")
     import_re = re.compile(r"^import\s+(\w+(?:\.\w+)*)")
 
-    for line in stdout.splitlines():
-        parts = line.split(":", 2)
-        if len(parts) < 3:
-            continue
-        raw_content = parts[2]
-        filepath, content = parts[0], raw_content.strip()
+    for filepath, _lineno, raw_content in hits:
+        content = raw_content.strip()
         # Indented imports are inside functions/classes (deferred)
         is_deferred = raw_content != raw_content.lstrip()
 

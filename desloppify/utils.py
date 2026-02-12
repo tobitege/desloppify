@@ -2,7 +2,7 @@
 
 import hashlib
 import os
-import subprocess
+import re
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -11,46 +11,101 @@ PROJECT_ROOT = Path(os.environ.get("DESLOPPIFY_ROOT", Path.cwd())).resolve()
 DEFAULT_PATH = PROJECT_ROOT / "src"
 SRC_PATH = PROJECT_ROOT / os.environ.get("DESLOPPIFY_SRC", "src")
 
-# Module-level exclusion state (set once from CLI at startup via set_exclusions)
+# Directories that are never useful to scan — always pruned during traversal.
+DEFAULT_EXCLUSIONS = frozenset({
+    "node_modules", ".git", "__pycache__", ".venv", "venv", ".env",
+    "dist", "build", ".next", ".nuxt", ".output",
+    ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".eggs", "*.egg-info",
+    ".svn", ".hg",
+})
+
+# Extra exclusions set via --exclude CLI flag, applied to all file discovery
 _extra_exclusions: tuple[str, ...] = ()
 
 
 def set_exclusions(patterns: list[str]):
-    """Set exclusion patterns (called once from CLI at startup)."""
-    _set_exclusions_impl(tuple(patterns))
+    """Set global exclusion patterns (called once from CLI at startup)."""
+    global _extra_exclusions
+    _extra_exclusions = tuple(patterns)
     _find_source_files_cached.cache_clear()
 
 
-def _set_exclusions_impl(patterns: tuple[str, ...]):
-    """Internal: update the module-level exclusion tuple."""
-    import desloppify.utils as _self
-    _self._extra_exclusions = patterns
+# ── Cross-platform grep replacements ────────────────────────
 
 
-def run_grep(cmd: list[str]) -> str:
-    """Run a grep command, filtering results by active exclusions.
+def _read_file_text(filepath: str) -> str | None:
+    """Read a file as text, returning None on failure."""
+    try:
+        return Path(filepath).read_text(errors="replace")
+    except OSError:
+        return None
 
-    Exclusion matching uses only the file path portion (before ':') converted
-    to a relative path, so patterns like 'Wan2GP' won't falsely match when the
-    project root directory name contains that substring (e.g. 'Headless-Wan2GP').
+
+def grep_files(pattern: str, file_list: list[str], *,
+               flags: int = 0) -> list[tuple[str, int, str]]:
+    """Search files for a regex pattern. Returns list of (filepath, lineno, line_text).
+
+    Cross-platform replacement for ``grep -rn -E <pattern> <path>``.
     """
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=PROJECT_ROOT)
-    if not _extra_exclusions or not result.stdout:
-        return result.stdout
-    lines = result.stdout.splitlines()
-    filtered = []
-    for line in lines:
-        # Extract just the file path portion for exclusion matching
-        colon_idx = line.find(":")
-        file_part = line[:colon_idx] if colon_idx != -1 else line
-        # Convert to relative path to avoid matching project root directory name
-        try:
-            file_part = str(Path(file_part).relative_to(PROJECT_ROOT))
-        except ValueError:
-            pass  # already relative or outside project root
-        if not any(ex in file_part for ex in _extra_exclusions):
-            filtered.append(line)
-    return "\n".join(filtered) + ("\n" if filtered else "")
+    compiled = re.compile(pattern, flags)
+    results: list[tuple[str, int, str]] = []
+    for filepath in file_list:
+        abs_path = filepath if os.path.isabs(filepath) else str(PROJECT_ROOT / filepath)
+        content = _read_file_text(abs_path)
+        if content is None:
+            continue
+        for lineno, line in enumerate(content.splitlines(), 1):
+            if compiled.search(line):
+                results.append((filepath, lineno, line))
+    return results
+
+
+def grep_files_containing(names: set[str], file_list: list[str], *,
+                          word_boundary: bool = True) -> dict[str, set[str]]:
+    r"""Find which files contain which names. Returns {name: set(filepaths)}.
+
+    Cross-platform replacement for ``grep -rlFw -f patternfile <path>``
+    followed by per-file ``grep -oFw``.
+    """
+    if not names:
+        return {}
+    if word_boundary:
+        escaped = sorted(names, key=len, reverse=True)
+        combined = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in escaped) + r")\b")
+    else:
+        escaped = sorted(names, key=len, reverse=True)
+        combined = re.compile("|".join(re.escape(n) for n in escaped))
+
+    name_to_files: dict[str, set[str]] = {}
+    for filepath in file_list:
+        abs_path = filepath if os.path.isabs(filepath) else str(PROJECT_ROOT / filepath)
+        content = _read_file_text(abs_path)
+        if content is None:
+            continue
+        found = set(combined.findall(content))
+        for name in found & names:
+            name_to_files.setdefault(name, set()).add(filepath)
+    return name_to_files
+
+
+def grep_count_files(name: str, file_list: list[str], *,
+                     word_boundary: bool = True) -> list[str]:
+    """Return list of files containing name. Replacement for ``grep -rl -w name``."""
+    if word_boundary:
+        pat = re.compile(r"\b" + re.escape(name) + r"\b")
+    else:
+        pat = re.compile(re.escape(name))
+    matching: list[str] = []
+    for filepath in file_list:
+        abs_path = filepath if os.path.isabs(filepath) else str(PROJECT_ROOT / filepath)
+        content = _read_file_text(abs_path)
+        if content is None:
+            continue
+        if pat.search(content):
+            matching.append(filepath)
+    return matching
+
 
 LOC_COMPACT_THRESHOLD = 10000  # Switch from "1,234" to "1K" format
 
@@ -131,28 +186,40 @@ def resolve_path(filepath: str) -> str:
     return str((PROJECT_ROOT / filepath).resolve())
 
 
+def _is_excluded_dir(name: str, rel_path: str, extra: tuple[str, ...]) -> bool:
+    """Check if a directory should be pruned during traversal."""
+    if name in DEFAULT_EXCLUSIONS or name.endswith(".egg-info"):
+        return True
+    if extra and any(ex in rel_path or ex == name for ex in extra):
+        return True
+    return False
+
+
 @lru_cache(maxsize=16)
 def _find_source_files_cached(path: str, extensions: tuple[str, ...],
                                exclusions: tuple[str, ...] | None = None) -> tuple[str, ...]:
-    """Cached file discovery — returns tuple for hashability."""
-    args = ["find", path]
-    name_parts: list[str] = []
-    for ext in extensions:
-        if name_parts:
-            name_parts.append("-o")
-        name_parts.extend(["-name", f"*{ext}"])
-    if len(extensions) > 1:
-        args += ["(", *name_parts, ")"]
-    else:
-        args += name_parts
-
-    result = subprocess.run(args, capture_output=True, text=True, cwd=PROJECT_ROOT)
-    files = [f for f in result.stdout.strip().splitlines() if f]
-
+    """Cached file discovery using os.walk — cross-platform, prunes during traversal."""
+    root = Path(path)
+    if not root.is_absolute():
+        root = PROJECT_ROOT / root
     all_exclusions = (exclusions or ()) + _extra_exclusions
-    if all_exclusions:
-        files = [f for f in files if not any(ex in f for ex in all_exclusions)]
-    return tuple(files)
+    ext_set = set(extensions)
+    files: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune excluded directories in-place (prevents descending into them)
+        rel_dir = os.path.relpath(dirpath, PROJECT_ROOT)
+        dirnames[:] = sorted(
+            d for d in dirnames
+            if not _is_excluded_dir(d, os.path.join(rel_dir, d), all_exclusions)
+        )
+        for fname in filenames:
+            if any(fname.endswith(ext) for ext in ext_set):
+                full = os.path.join(dirpath, fname)
+                rel_file = os.path.relpath(full, PROJECT_ROOT)
+                if all_exclusions and any(ex in rel_file for ex in all_exclusions):
+                    continue
+                files.append(rel_file)
+    return tuple(sorted(files))
 
 
 def find_source_files(path: str | Path, extensions: list[str],
@@ -173,8 +240,8 @@ def find_tsx_files(path: str | Path) -> list[str]:
 
 
 def find_py_files(path: str | Path) -> list[str]:
-    """Find all .py files under a path, excluding common non-source dirs."""
-    return find_source_files(path, [".py"], ["__pycache__", ".venv", "node_modules"])
+    """Find all .py files under a path."""
+    return find_source_files(path, [".py"])
 
 
 TOOL_DIR = Path(__file__).resolve().parent

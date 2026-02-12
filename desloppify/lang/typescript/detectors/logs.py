@@ -8,51 +8,38 @@ Catches:
 
 import json
 import re
-import subprocess
 from collections import defaultdict
 from pathlib import Path
 
-from ....utils import PROJECT_ROOT, c, print_table, rel
+from ....utils import PROJECT_ROOT, c, grep_files, print_table, rel
 
 
 TAG_EXTRACT_RE = re.compile(r"\[([^\]]+)\]")
 
+# Pattern 1: Direct and emoji-prefixed tags
+_PAT1 = r"console\.(log|warn|info|debug)\s*\(\s*['\"`].{0,4}\["
+# Pattern 2: Template-literal tag via variable containing TAG/DEBUG/LOG
+_PAT2 = r"console\.(log|warn|info|debug)\s*\(\s*`\$\{\w*(TAG|DEBUG|LOG)\w*\}"
+
 
 def detect_logs(path: Path) -> tuple[list[dict], int]:
-    # Pattern 1: Direct and emoji-prefixed tags — console.log('[Tag]' or console.log('emoji [Tag]'
-    # The .{0,4} allows up to 4 chars of emoji/whitespace before the bracket
-    result1 = subprocess.run(
-        ["grep", "-rn", "--include=*.ts", "--include=*.tsx", "-E",
-         r"console\.(log|warn|info|debug)\s*\(\s*['\"`].{0,4}\[", str(path)],
-        capture_output=True, text=True, cwd=PROJECT_ROOT,
-    )
-
-    # Pattern 2: Template-literal tag via variable containing TAG/DEBUG/LOG in its name
-    # (catches indirect tags like REORDER_DEBUG_TAG)
-    result2 = subprocess.run(
-        ["grep", "-rn", "--include=*.ts", "--include=*.tsx", "-Ei",
-         r"console\.(log|warn|info|debug)\s*\(\s*`\$\{\w*(TAG|DEBUG|LOG)\w*\}", str(path)],
-        capture_output=True, text=True, cwd=PROJECT_ROOT,
-    )
-
     from ....utils import find_ts_files
-    total_files = len(find_ts_files(path))
-    seen: set[tuple[str, str]] = set()  # (filepath, lineno) dedup
-    entries = []
+    ts_files = find_ts_files(path)
+    total_files = len(ts_files)
 
-    for output in [result1.stdout, result2.stdout]:
-        for line in output.splitlines():
-            parts = line.split(":", 2)
-            if len(parts) < 3:
-                continue
-            filepath, lineno, content = parts[0], parts[1], parts[2]
-            key = (filepath, lineno)
-            if key in seen:
-                continue
-            seen.add(key)
-            tag_match = TAG_EXTRACT_RE.search(content)
-            tag = tag_match.group(1) if tag_match else "unknown"
-            entries.append({"file": filepath, "line": int(lineno), "tag": tag, "content": content.strip()})
+    hits1 = grep_files(_PAT1, ts_files)
+    hits2 = grep_files(_PAT2, ts_files, flags=re.IGNORECASE)
+
+    seen: set[tuple[str, int]] = set()
+    entries = []
+    for filepath, lineno, content in hits1 + hits2:
+        key = (filepath, lineno)
+        if key in seen:
+            continue
+        seen.add(key)
+        tag_match = TAG_EXTRACT_RE.search(content)
+        tag = tag_match.group(1) if tag_match else "unknown"
+        entries.append({"file": filepath, "line": lineno, "tag": tag, "content": content.strip()})
 
     return entries, total_files
 

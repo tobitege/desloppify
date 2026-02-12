@@ -99,12 +99,13 @@ def _show_post_scan_analysis(diff: dict, stats: dict) -> tuple[list[str], str | 
         print(c(f"  Suggested next: {next_action}", "cyan"))
         print()
 
-    # Reflection prompts
-    print(c("  ── Reflect ──", "dim"))
-    print(c("  1. Any new findings from cascading? (exports removed → vars now unused?)", "dim"))
-    print(c("  2. Did score move as expected? If not, check reopened/new counts above.", "dim"))
-    print(c("  3. Are there quick wins? Check `desloppify status` for tier breakdown.", "dim"))
-    print()
+    # Computed narrative headline (replaces static reflect block)
+    from ..narrative import compute_narrative
+    lang_name = lang.name if lang else None
+    narrative = compute_narrative(state, diff=diff, lang=lang_name)
+    if narrative.get("headline"):
+        print(c(f"  → {narrative['headline']}", "cyan"))
+        print()
 
     return warnings, next_action
 
@@ -178,7 +179,8 @@ def cmd_scan(args):
                   "objective_score": state.get("objective_score"),
                   "objective_strict": state.get("objective_strict"),
                   "dimension_scores": state.get("dimension_scores"),
-                  "potentials": state.get("potentials")})
+                  "potentials": state.get("potentials"),
+                  "narrative": narrative})
 
     # Generate scorecard badge
     try:

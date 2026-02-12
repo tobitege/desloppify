@@ -51,15 +51,25 @@ def get_lang(name: str) -> LangConfig:
 
 
 def auto_detect_lang(project_root: Path) -> str | None:
-    """Auto-detect language from project files."""
+    """Auto-detect language from project files.
+
+    Only returns languages that have a registered implementation.
+    """
+    _load_all()
+    candidates = []
     if (project_root / "package.json").exists():
-        return "typescript"
+        candidates.append("typescript")
     if ((project_root / "pyproject.toml").exists()
             or (project_root / "setup.py").exists()
             or (project_root / "setup.cfg").exists()):
-        return "python"
+        candidates.append("python")
     if (project_root / "go.mod").exists():
-        return "go"
+        candidates.append("go")
+    if (project_root / "Cargo.toml").exists():
+        candidates.append("rust")
+    for lang in candidates:
+        if lang in _registry:
+            return lang
     return None
 
 
