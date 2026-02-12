@@ -111,10 +111,14 @@ def _get_project_name() -> str:
             ["git", "config", "--get", "remote.origin.url"],
             cwd=str(PROJECT_ROOT), stderr=subprocess.DEVNULL, text=True,
         ).strip()
-        # SSH: git@github.com:owner/repo.git  HTTPS: https://github.com/owner/repo.git
-        if ":" in url and "@" in url:
+        # SSH: git@github.com:owner/repo.git
+        # HTTPS: https://github.com/owner/repo.git
+        # HTTPS+token: https://TOKEN@github.com/owner/repo.git
+        if url.startswith("git@") and ":" in url:
+            # SSH format only — require git@ prefix to avoid matching token URLs
             path = url.split(":")[-1]
         else:
+            # HTTPS (with or without embedded credentials) — take last 2 path segments
             path = "/".join(url.split("/")[-2:])
         return path.removesuffix(".git")
     except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
