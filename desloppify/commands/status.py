@@ -51,6 +51,8 @@ def cmd_status(args):
     else:
         print(c(f"\n  Desloppify Score: {score}/100", "bold") +
               c(f"  (strict: {strict_score}/100)", "dim"))
+        print(c("  ⚠ Dimension-based scoring unavailable (potentials missing). "
+                "Run a full scan to fix: desloppify scan --path <source-root>", "yellow"))
 
     # Codebase metrics
     metrics = state.get("codebase_metrics", {})

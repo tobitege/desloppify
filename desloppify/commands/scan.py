@@ -72,6 +72,9 @@ def _show_score_delta(state: dict, prev_score: float, prev_strict: float,
         print(f"  Score: {c(f'{new_score:.1f}/100{delta_str}', color)}" +
               c(f"  (strict: {new_strict:.1f}/100{strict_delta_str})", strict_color) +
               c(f"  |  {stats['open']} open / {stats['total']} total", "dim"))
+        print(c("  ⚠ Dimension-based scoring unavailable (potentials missing). "
+                "This score uses legacy weighted-progress and is unreliable. "
+                "Run a full scan to fix: desloppify scan --path <source-root>", "yellow"))
 
 
 def _show_post_scan_analysis(diff: dict, state: dict, lang) -> tuple[list[str], str | None, dict]:
