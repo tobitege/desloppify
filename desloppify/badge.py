@@ -184,7 +184,7 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
     content_gap = _s(8)
     total_content_h = score_h + content_gap + strict_h
     panel_mid = (panel_top + panel_bot) // 2
-    content_top = panel_mid - total_content_h // 2
+    content_top = panel_mid - total_content_h // 2 + _s(3)  # optical: descenders skew center up
 
     # Main score — centered in panel
     sw = draw.textlength(score_str, font=font_big)
@@ -250,7 +250,7 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
         if i % 2 == 1:
             draw.rectangle((table_x1 + 1, band_top, table_x2 - 1, band_bot), fill=BG_ROW_ALT)
         # Center text vertically within band
-        text_y = band_top + (row_h - row_text_h) // 2 - row_text_offset
+        text_y = band_top + (row_h - row_text_h) // 2 - row_text_offset + _s(1)  # optical nudge
         score = data.get("score", 100)
         strict = data.get("strict", score)
         draw.text((col_name, text_y), name, fill=TEXT, font=font_row)
