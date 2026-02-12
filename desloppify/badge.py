@@ -225,7 +225,7 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
     # Total table content: header + rule + gap + rows
     table_content_h = header_h + rule_gap + rows_gap + row_count * row_h
     table_bot = table_top + table_h
-    table_content_top = table_top + (table_h - table_content_h) // 2
+    table_content_top = table_top + (table_h - table_content_h) // 2 + _s(4)  # optical nudge
 
     header_y = table_content_top
     draw.text((col_name, header_y - header_bbox[1]), "Dimension", fill=DIM, font=font_header)
