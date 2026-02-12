@@ -136,13 +136,17 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
     draw.rectangle((0, 0, W - 1, H - 1), outline=FRAME, width=_s(2))
     draw.rectangle((_s(5), _s(5), W - _s(6), H - _s(6)), outline=BORDER, width=1)
 
-    # --- Title ---
+    # --- Title: centered between inner frame top and first rule ---
+    rule_y = _s(40)
     title = "DESLOPPIFY"
     tw = draw.textlength(title, font=font_title)
-    draw.text(((W - tw) / 2, _s(16)), title, fill=TEXT, font=font_title)
+    title_bbox = draw.textbbox((0, 0), title, font=font_title)
+    title_h = title_bbox[3] - title_bbox[1]
+    title_zone_top = _s(6)  # inner frame top
+    title_y = title_zone_top + (rule_y - title_zone_top - title_h) // 2
+    draw.text(((W - tw) / 2, title_y - title_bbox[1]), title, fill=TEXT, font=font_title)
 
     # --- Ornamental rule below title ---
-    rule_y = _s(40)
     rule_margin = _s(40)
     _draw_rule_with_ornament(draw, rule_y, rule_margin, W - rule_margin, W // 2, BORDER, ACCENT)
 
@@ -154,24 +158,39 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
         (panel_margin, panel_top, W - panel_margin, panel_bot),
         radius=_s(4), fill=BG_SCORE, outline=BORDER, width=1)
 
-    # Main score — centered in panel
+    # Measure text heights for vertical centering
     score_str = f"{main_score:.1f}"
     score_color = _score_color(main_score)
-    sw = draw.textlength(score_str, font=font_big)
-    score_y = _s(50)
-    draw.text(((W - sw) / 2, score_y), score_str, fill=score_color, font=font_big)
+    score_bbox = draw.textbbox((0, 0), score_str, font=font_big)
+    score_h = score_bbox[3] - score_bbox[1]
 
-    # "strict" label + value below main score, nicely baseline-aligned
     strict_label = "strict"
     strict_val = f"{strict_score:.1f}"
+    strict_label_bbox = draw.textbbox((0, 0), strict_label, font=font_strict_label)
+    strict_val_bbox = draw.textbbox((0, 0), strict_val, font=font_strict_val)
+    strict_h = max(strict_label_bbox[3] - strict_label_bbox[1],
+                   strict_val_bbox[3] - strict_val_bbox[1])
+
+    # Total content height: score + gap + strict line
+    content_gap = _s(4)
+    total_content_h = score_h + content_gap + strict_h
+    panel_mid = (panel_top + panel_bot) // 2
+    content_top = panel_mid - total_content_h // 2
+
+    # Main score — centered in panel
+    sw = draw.textlength(score_str, font=font_big)
+    draw.text(((W - sw) / 2, content_top - score_bbox[1]), score_str, fill=score_color, font=font_big)
+
+    # Strict label + value below main score
     sl_w = draw.textlength(strict_label, font=font_strict_label)
     sv_w = draw.textlength(strict_val, font=font_strict_val)
     gap = _s(5)
-    strict_total = sl_w + gap + sv_w
-    strict_x = (W - strict_total) / 2
-    strict_baseline = _s(108)
-    draw.text((strict_x, strict_baseline), strict_label, fill=DIM, font=font_strict_label)
-    draw.text((strict_x + sl_w + gap, strict_baseline - _s(5)), strict_val, fill=_score_color(strict_score), font=font_strict_val)
+    strict_total_w = sl_w + gap + sv_w
+    strict_x = (W - strict_total_w) / 2
+    strict_y = content_top + score_h + content_gap
+    # Baseline-align the two strict texts
+    draw.text((strict_x, strict_y - strict_label_bbox[1]), strict_label, fill=DIM, font=font_strict_label)
+    draw.text((strict_x + sl_w + gap, strict_y - strict_val_bbox[1]), strict_val, fill=_score_color(strict_score), font=font_strict_val)
 
     # --- Ornamental rule above table ---
     rule2_y = table_top - _s(10)
@@ -184,23 +203,32 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
         (table_x1, table_top, table_x2, table_top + table_h),
         radius=_s(4), fill=BG_TABLE, outline=BORDER, width=1)
 
-    # --- Table header ---
+    # --- Table content: measure total height, then center within table box ---
     col_name = table_x1 + _s(12)
     col_health = _s(262)
     col_strict = _s(342)
-    header_y = table_top + _s(4)
-    draw.text((col_name, header_y), "Dimension", fill=DIM, font=font_header)
-    draw.text((col_health, header_y), "Health", fill=DIM, font=font_header)
-    draw.text((col_strict, header_y), "Strict", fill=DIM, font=font_header)
+
+    header_bbox = draw.textbbox((0, 0), "Dimension", font=font_header)
+    header_h = header_bbox[3] - header_bbox[1]
+    rule_gap = _s(4)
+
+    # Total table content: header + rule + rows
+    table_content_h = header_h + rule_gap + _s(2) + row_count * row_h
+    table_bot = table_top + table_h
+    table_content_top = table_top + (table_h - table_content_h) // 2
+
+    header_y = table_content_top
+    draw.text((col_name, header_y - header_bbox[1]), "Dimension", fill=DIM, font=font_header)
+    draw.text((col_health, header_y - header_bbox[1]), "Health", fill=DIM, font=font_header)
+    draw.text((col_strict, header_y - header_bbox[1]), "Strict", fill=DIM, font=font_header)
 
     # Header underline
-    line_y = header_y + _s(14)
+    line_y = header_y + header_h + rule_gap
     draw.rectangle((col_name, line_y, table_x2 - _s(12), line_y), fill=BORDER)
 
     # --- Dimension rows with alternating tint ---
     y = line_y + _s(4)
     for i, (name, data) in enumerate(active_dims):
-        # Alternating row background
         if i % 2 == 1:
             draw.rectangle((table_x1 + 1, y - _s(1), table_x2 - 1, y + row_h - _s(3)), fill=BG_ROW_ALT)
         score = data.get("score", 100)
@@ -210,11 +238,15 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
         draw.text((col_strict, y), f"{strict:.1f}%", fill=_score_color(strict), font=font_row)
         y += row_h
 
-    # --- Footer ---
-    footer_y = H - _s(20)
+    # --- Footer: vertically centered between table bottom and inner frame ---
     footer = "github.com/peteromallet/desloppify"
+    footer_bbox = draw.textbbox((0, 0), footer, font=font_tiny)
+    footer_h = footer_bbox[3] - footer_bbox[1]
+    footer_zone_top = table_bot
+    footer_zone_bot = H - _s(6)  # inner frame bottom
+    footer_y = footer_zone_top + (footer_zone_bot - footer_zone_top - footer_h) // 2
     fw = draw.textlength(footer, font=font_tiny)
-    draw.text(((W - fw) / 2, footer_y), footer, fill=DIM, font=font_tiny)
+    draw.text(((W - fw) / 2, footer_y - footer_bbox[1]), footer, fill=DIM, font=font_tiny)
 
     img.save(str(output_path), "PNG", optimize=True)
     return output_path
