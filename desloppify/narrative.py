@@ -70,6 +70,7 @@ def compute_narrative(state: dict, *, diff: dict | None = None,
     tools = _compute_tools(findings, dim_scores, lang)
     headline = _compute_headline(phase, dimensions, debt, milestone, diff,
                                  obj_strict, obj_score, stats, history)
+    reminders = _compute_reminders(state, diff, lang, phase, debt, actions, dimensions)
 
     return {
         "phase": phase,
@@ -79,6 +80,7 @@ def compute_narrative(state: dict, *, diff: dict | None = None,
         "tools": tools,
         "debt": debt,
         "milestone": milestone,
+        "reminders": reminders,
     }
 
 
@@ -506,6 +508,9 @@ def _compute_tools(findings: dict, dim_scores: dict,
     if by_det.get("naming", 0):
         move_reasons.append(f"{by_det['naming']} naming issues")
 
+    # Badge / scorecard status
+    badge = _compute_badge_status()
+
     return {
         "fixers": fixers,
         "move": {
@@ -518,6 +523,7 @@ def _compute_tools(findings: dict, dim_scores: dict,
             "command": "desloppify plan",
             "description": "Generate prioritized markdown cleanup plan",
         },
+        "badge": badge,
     }
 
 
@@ -578,3 +584,108 @@ def _compute_headline(phase: str, dimensions: dict, debt: dict,
         return f"Health {obj_strict:.1f}/100 — maintenance mode. Watch for regressions."
 
     return None
+
+
+# ── Badge / scorecard status ──────────────────────────────
+
+def _compute_badge_status() -> dict:
+    """Check if scorecard.png exists and whether README references it."""
+    from pathlib import Path
+    from .utils import PROJECT_ROOT
+
+    scorecard_path = PROJECT_ROOT / "scorecard.png"
+    generated = scorecard_path.exists()
+
+    in_readme = False
+    if generated:
+        for readme_name in ("README.md", "readme.md", "README.MD"):
+            readme_path = PROJECT_ROOT / readme_name
+            if readme_path.exists():
+                try:
+                    in_readme = "scorecard.png" in readme_path.read_text()
+                except OSError:
+                    pass
+                break
+
+    recommendation = None
+    if generated and not in_readme:
+        recommendation = 'Add to README: <img src="scorecard.png" width="400">'
+
+    return {
+        "generated": generated,
+        "in_readme": in_readme,
+        "path": "scorecard.png",
+        "recommendation": recommendation,
+    }
+
+
+# ── Contextual reminders ─────────────────────────────────
+
+def _compute_reminders(state: dict, diff: dict | None, lang: str | None,
+                       phase: str, debt: dict, actions: list[dict],
+                       dimensions: dict) -> list[dict]:
+    """Compute context-specific reminders that should be surfaced every time."""
+    reminders = []
+    findings = state.get("findings", {})
+    obj_strict = state.get("objective_strict")
+
+    # 1. Auto-fixers available
+    if lang != "python":
+        auto_fix_actions = [a for a in actions if a.get("type") == "auto_fix"]
+        if auto_fix_actions:
+            total = sum(
+                int(a["description"].split()[0]) for a in auto_fix_actions
+                if a["description"][0].isdigit()
+            )
+            if total > 0:
+                first_cmd = auto_fix_actions[0].get("command", "desloppify fix <fixer> --dry-run")
+                reminders.append({
+                    "type": "auto_fixers_available",
+                    "message": f"{total} findings are auto-fixable. Run `{first_cmd}`.",
+                    "command": first_cmd,
+                })
+
+    # 2. Rescan needed (after fix or resolve — detected by diff being None or command context)
+    if diff is None:
+        reminders.append({
+            "type": "rescan_needed",
+            "message": "Rescan to verify — cascading effects may create new findings.",
+            "command": "desloppify scan",
+        })
+
+    # 3. Badge recommendation (strict >= 90 and README doesn't have it)
+    if obj_strict is not None and obj_strict >= 90:
+        badge = _compute_badge_status()
+        if badge["generated"] and not badge["in_readme"]:
+            reminders.append({
+                "type": "badge_recommendation",
+                "message": ('Score is above 90! Add the scorecard to your README: '
+                            '<img src="scorecard.png" width="400">'),
+                "command": None,
+            })
+
+    # 4. Wontfix debt growing
+    if debt.get("trend") == "growing":
+        reminders.append({
+            "type": "wontfix_growing",
+            "message": "Wontfix debt is growing. Review stale decisions: `desloppify show --status wontfix`.",
+            "command": "desloppify show --status wontfix",
+        })
+
+    # 5. Stagnant dimensions
+    for dim in dimensions.get("stagnant_dimensions", []):
+        reminders.append({
+            "type": "stagnant_nudge",
+            "message": f"{dim['name']} has been stuck for {dim['stuck_scans']} scans. Try a different approach.",
+            "command": None,
+        })
+
+    # 6. Dry-run first (when top action is auto_fix)
+    if actions and actions[0].get("type") == "auto_fix":
+        reminders.append({
+            "type": "dry_run_first",
+            "message": "Always --dry-run first, review changes, then apply.",
+            "command": None,
+        })
+
+    return reminders

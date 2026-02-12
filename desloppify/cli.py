@@ -19,6 +19,7 @@ def _write_query(data: dict):
     """
     QUERY_FILE.parent.mkdir(parents=True, exist_ok=True)
     QUERY_FILE.write_text(json.dumps(data, indent=2, default=str) + "\n")
+    print(f"  \u2192 query.json updated", file=sys.stderr)
 
 
 def _state_path(args) -> Path | None:

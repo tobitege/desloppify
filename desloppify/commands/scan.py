@@ -74,15 +74,17 @@ def _show_score_delta(state: dict, prev_score: float, prev_strict: float,
               c(f"  |  {stats['open']} open / {stats['total']} total", "dim"))
 
 
-def _show_post_scan_analysis(diff: dict, stats: dict) -> tuple[list[str], str | None]:
-    """Print warnings and suggested next action. Returns (warnings, next_action)."""
+def _show_post_scan_analysis(diff: dict, state: dict, lang) -> tuple[list[str], str | None, dict]:
+    """Print warnings, suggested action, and narrative. Returns (warnings, next_action, narrative)."""
+    stats = state["stats"]
     warnings = []
     if diff["reopened"] > 5:
         warnings.append(f"{diff['reopened']} findings reopened — was a previous fix reverted? Check: git log --oneline -5")
     if diff["new"] > 10 and diff["auto_resolved"] < 3:
         warnings.append(f"{diff['new']} new findings with few resolutions — likely cascading from recent fixes. Run fixers again.")
-    if diff.get("chronic_reopeners", 0) > 0:
-        n = diff["chronic_reopeners"]
+    chronic = diff.get("chronic_reopeners", [])
+    n = len(chronic) if isinstance(chronic, list) else chronic
+    if n > 0:
         warnings.append(f"⟳ {n} chronic reopener{'s' if n != 1 else ''} (reopened 2+ times). "
                         f"These keep bouncing — fix properly or wontfix. "
                         f"Run: `desloppify show --chronic` to see them.")
@@ -107,7 +109,7 @@ def _show_post_scan_analysis(diff: dict, stats: dict) -> tuple[list[str], str | 
         print(c(f"  → {narrative['headline']}", "cyan"))
         print()
 
-    return warnings, next_action
+    return warnings, next_action, narrative
 
 
 def cmd_scan(args):
@@ -170,7 +172,7 @@ def cmd_scan(args):
     if new_dim_scores and prev_dim_scores:
         _show_dimension_deltas(prev_dim_scores, new_dim_scores)
 
-    warnings, next_action = _show_post_scan_analysis(diff, state["stats"])
+    warnings, next_action, narrative = _show_post_scan_analysis(diff, state, lang)
 
     _write_query({"command": "scan", "score": state["score"],
                   "strict_score": state.get("strict_score", 0),
@@ -184,7 +186,7 @@ def cmd_scan(args):
 
     # Generate scorecard badge
     try:
-        from ..badge import generate_scorecard, get_badge_config
+        from ..scorecard import generate_scorecard, get_badge_config
         badge_path, disabled = get_badge_config(args)
         if not disabled and badge_path:
             generate_scorecard(state, badge_path)

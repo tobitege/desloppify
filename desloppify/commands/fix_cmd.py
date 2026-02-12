@@ -34,7 +34,7 @@ def cmd_fix(args):
     if not dry_run:
         _apply_and_report(args, path, fixer, fixer_name, entries, results, total_items)
     else:
-        _report_dry_run(fixer_name, entries, results, total_items)
+        _report_dry_run(args, fixer_name, entries, results, total_items)
     print()
 
 
@@ -97,19 +97,32 @@ def _apply_and_report(args, path, fixer, fixer_name, entries, results, total_ite
         save_state(state, sp)
 
     skip_reasons = getattr(results, "skip_reasons", {})
+    from ..narrative import compute_narrative
+    from ..cli import _resolve_lang
+    fix_lang = _resolve_lang(args)
+    fix_lang_name = fix_lang.name if fix_lang else None
+    narrative = compute_narrative(state, lang=fix_lang_name)
     _write_query({"command": "fix", "fixer": fixer_name,
                   "files_fixed": len(results), "items_fixed": total_items,
                   "findings_resolved": len(resolved_ids),
                   "score": state["score"], "strict_score": state.get("strict_score", 0),
                   "prev_score": prev_score, "skip_reasons": skip_reasons,
-                  "next_action": "Run `npx tsc --noEmit` to verify, then `desloppify scan` to update state"})
+                  "next_action": "Run `npx tsc --noEmit` to verify, then `desloppify scan` to update state",
+                  "narrative": narrative})
     _print_fix_retro(fixer_name, len(entries), total_items, len(resolved_ids), skip_reasons)
 
 
-def _report_dry_run(fixer_name, entries, results, total_items):
+def _report_dry_run(args, fixer_name, entries, results, total_items):
     """Write dry-run query and print review prompts."""
+    from ..narrative import compute_narrative
+    from ..cli import _resolve_lang
+    fix_lang = _resolve_lang(args)
+    fix_lang_name = fix_lang.name if fix_lang else None
+    state = getattr(args, "_preloaded_state", {})
+    narrative = compute_narrative(state, lang=fix_lang_name)
     _write_query({"command": "fix", "fixer": fixer_name, "dry_run": True,
-                  "files_would_fix": len(results), "items_would_fix": total_items})
+                  "files_would_fix": len(results), "items_would_fix": total_items,
+                  "narrative": narrative})
     skipped = len(entries) - total_items
     if skipped > 0:
         print(c(f"\n  ── Review ──", "dim"))

@@ -35,10 +35,18 @@ desloppify detect <name> --path src/       # run one detector raw (bypass state)
 5. **Resolve**: `desloppify resolve fixed "<finding-id>"`
 6. **Rescan**: `desloppify scan --path src/` to verify and update score
 
-## Reading Results
+## CRITICAL: Read query.json After Every Command
 
-After running any query command (`show`, `next`, `status`), read `.desloppify/query.json`
-for structured JSON output. This is more reliable than parsing terminal output.
+After running ANY desloppify command, you MUST read `.desloppify/query.json`.
+This file contains structured data including the `narrative` key with:
+- `phase`: Current project phase (first_scan, early_momentum, middle_grind, refinement, maintenance, stagnation, regression)
+- `actions`: Prioritized list of recommended next steps with exact commands
+- `tools`: Available fixers, move tool relevance, and badge/scorecard status
+- `debt`: Wontfix gap analysis and trend direction
+- `reminders`: Context-specific nudges you MUST surface to the user
+
+Do NOT rely solely on terminal output. The narrative context in query.json
+tells you what to recommend, which tool to suggest, and how to frame your response.
 
 ## Detectors
 
