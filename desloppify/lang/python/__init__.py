@@ -13,7 +13,21 @@ from ..base import (DetectorPhase, LangConfig,
                     phase_dupes)
 from ...detectors.base import ComplexitySignal, GodRule
 from ...utils import find_py_files, log
+from ...zones import ZoneRule, Zone, COMMON_ZONE_RULES, adjust_potential, filter_entries
 from .detectors.complexity import compute_max_params, compute_nesting_depth, compute_long_functions
+
+
+# ── Zone classification rules (order matters — first match wins) ──
+
+PY_ZONE_RULES = [
+    ZoneRule(Zone.GENERATED, ["/migrations/", "_pb2.py", "_pb2_grpc.py"]),
+    ZoneRule(Zone.TEST, ["test_", "_test.py",
+                         "conftest.py", "/factories/"]),
+    ZoneRule(Zone.CONFIG, ["setup.py", "setup.cfg", "pyproject.toml",
+                           "manage.py", "wsgi.py", "asgi.py",
+                           "settings.py", "config.py"]),
+    ZoneRule(Zone.SCRIPT, ["__main__.py"]),
+] + COMMON_ZONE_RULES
 
 
 # ── Config data (single source of truth) ──────────────────
@@ -72,7 +86,9 @@ def _phase_unused(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, i
     from .detectors.unused import detect_unused
     from ..base import make_unused_findings
     entries, total_files = detect_unused(path)
-    return make_unused_findings(entries, log), {"unused": total_files}
+    return make_unused_findings(entries, log), {
+        "unused": adjust_potential(lang._zone_map, total_files),
+    }
 
 
 def _phase_structural(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, int]]:
@@ -123,7 +139,7 @@ def _phase_structural(path: Path, lang: LangConfig) -> tuple[list[dict], dict[st
     results.extend(make_passthrough_findings(pt_entries, "function", "total_params", log))
 
     potentials = {
-        "structural": file_count,
+        "structural": adjust_potential(lang._zone_map, file_count),
         "flat_dirs": dir_count,
         "props": len(pt_entries) if pt_entries else 0,
     }
@@ -138,30 +154,35 @@ def _phase_coupling(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str,
     from ...detectors.facade import detect_reexport_facades
 
     graph = build_dep_graph(path)
+    zm = lang._zone_map
 
     single_entries, single_candidates = detect_single_use_abstractions(
         path, graph, barrel_names=lang.barrel_names)
+    single_entries = filter_entries(zm, single_entries, "single_use")
     results = make_single_use_findings(single_entries, lang.get_area,
                                        skip_dir_names={"commands"}, stderr_fn=log)
 
     cycle_entries, _ = detect_cycles(graph)
+    cycle_entries = filter_entries(zm, cycle_entries, "cycles", file_key="files")
     results.extend(make_cycle_findings(cycle_entries, log))
 
     orphan_entries, total_graph_files = detect_orphaned_files(
         path, graph, extensions=lang.extensions,
         extra_entry_patterns=lang.entry_patterns,
         extra_barrel_names=lang.barrel_names)
+    orphan_entries = filter_entries(zm, orphan_entries, "orphaned")
     results.extend(make_orphaned_findings(orphan_entries, log))
 
     facade_entries, _ = detect_reexport_facades(graph, lang="python")
+    facade_entries = filter_entries(zm, facade_entries, "facade")
     results.extend(make_facade_findings(facade_entries, log))
 
     log(f"         -> {len(results)} coupling/structural findings total")
     potentials = {
-        "single_use": single_candidates,
-        "cycles": total_graph_files,
-        "orphaned": total_graph_files,
-        "facade": total_graph_files,
+        "single_use": adjust_potential(zm, single_candidates),
+        "cycles": adjust_potential(zm, total_graph_files),
+        "orphaned": adjust_potential(zm, total_graph_files),
+        "facade": adjust_potential(zm, total_graph_files),
     }
     return results, potentials
 
@@ -169,7 +190,9 @@ def _phase_coupling(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str,
 def _phase_smells(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, int]]:
     from .detectors.smells import detect_smells
     entries, total_files = detect_smells(path)
-    return make_smell_findings(entries, log), {"smells": total_files}
+    return make_smell_findings(entries, log), {
+        "smells": adjust_potential(lang._zone_map, total_files),
+    }
 
 
 # ── Build the config ──────────────────────────────────────
@@ -217,4 +240,5 @@ class PythonConfig(LangConfig):
             large_threshold=300,
             complexity_threshold=25,
             extract_functions=_py_extract_functions,
+            zone_rules=PY_ZONE_RULES,
         )

@@ -177,8 +177,12 @@ def cmd_scan(args):
     lang = _resolve_lang(args)
     lang_label = f" ({lang.name})" if lang else ""
 
+    # Load zone overrides from state config
+    zone_overrides = state.get("config", {}).get("zone_overrides") or None
+
     print(c(f"\nDesloppify Scan{lang_label}\n", "bold"))
-    findings, potentials = generate_findings(path, include_slow=include_slow, lang=lang)
+    findings, potentials = generate_findings(path, include_slow=include_slow, lang=lang,
+                                              zone_overrides=zone_overrides)
 
     codebase_metrics = _collect_codebase_metrics(lang, path)
 
@@ -213,6 +217,10 @@ def cmd_scan(args):
     prev_strict = state.get("strict_score", 0)
     prev_obj = state.get("objective_score")
     prev_obj_strict = state.get("objective_strict")
+    # Persist zone distribution before save so narrative can access it
+    if lang and lang._zone_map is not None:
+        state["zone_distribution"] = lang._zone_map.counts()
+
     prev_dim_scores = state.get("dimension_scores", {})
     diff = merge_scan(state, findings,
                       lang=lang.name if lang else None,
@@ -238,6 +246,8 @@ def cmd_scan(args):
     if new_dim_scores and prev_dim_scores:
         _show_dimension_deltas(prev_dim_scores, new_dim_scores)
 
+    zone_distribution = state.get("zone_distribution")
+
     warnings, narrative = _show_post_scan_analysis(diff, state, lang)
 
     _write_query({"command": "scan", "score": state["score"],
@@ -248,6 +258,7 @@ def cmd_scan(args):
                   "objective_strict": state.get("objective_strict"),
                   "dimension_scores": state.get("dimension_scores"),
                   "potentials": state.get("potentials"),
+                  "zone_distribution": zone_distribution,
                   "narrative": narrative})
 
     # Generate scorecard badge
@@ -285,7 +296,7 @@ def _show_detector_progress(state: dict):
     if not findings:
         return
 
-    STRUCTURAL_MERGE = {"large", "complexity", "gods", "concerns"}
+    from ..narrative import STRUCTURAL_MERGE
     by_det: dict[str, dict] = {}
     for f in findings.values():
         det = f.get("detector", "unknown")

@@ -15,6 +15,7 @@ from ..base import (BoundaryRule, DetectorPhase, FixerConfig, LangConfig,
 from ...detectors.base import ComplexitySignal, GodRule
 from ...state import make_finding
 from ...utils import find_ts_files, get_area, log, rel
+from ...zones import ZoneRule, Zone, COMMON_ZONE_RULES, adjust_potential, filter_entries
 
 
 def _compute_ts_destructure_props(content, lines):
@@ -66,6 +67,18 @@ TS_SKIP_NAMES = {
 TS_SKIP_DIRS = {"src/shared/components/ui"}
 
 
+# ── Zone classification rules (order matters — first match wins) ──
+
+TS_ZONE_RULES = [
+    ZoneRule(Zone.GENERATED, [".d.ts", "/migrations/"]),
+    ZoneRule(Zone.TEST, ["/__tests__/", ".test.", ".spec.", ".stories.",
+                         "/__mocks__/", "setupTests."]),
+    ZoneRule(Zone.CONFIG, ["vite.config", "tailwind.config", "postcss.config",
+                           "tsconfig", "eslint", "prettier", "jest.config",
+                           "vitest.config", "next.config", "webpack.config"]),
+] + COMMON_ZONE_RULES
+
+
 # ── Phase runners ──────────────────────────────────────────
 
 
@@ -84,14 +97,16 @@ def _phase_logs(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, int
             detail={"count": len(entries), "lines": [e["line"] for e in entries[:20]]},
         ))
     log(f"         {len(log_entries)} instances → {len(results)} findings")
-    return results, {"logs": total_files}
+    return results, {"logs": adjust_potential(lang._zone_map, total_files)}
 
 
 def _phase_unused(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, int]]:
     from .detectors.unused import detect_unused
     from ..base import make_unused_findings
     entries, total_files = detect_unused(path)
-    return make_unused_findings(entries, log), {"unused": total_files}
+    return make_unused_findings(entries, log), {
+        "unused": adjust_potential(lang._zone_map, total_files),
+    }
 
 
 def _phase_exports(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, int]]:
@@ -202,7 +217,7 @@ def _phase_structural(path: Path, lang: LangConfig) -> tuple[list[dict], dict[st
             },
         ))
     potentials = {
-        "structural": file_count,
+        "structural": adjust_potential(lang._zone_map, file_count),
         "flat_dirs": dir_count,
         "props": max(prop_count, len(pt_entries)) if prop_count else len(pt_entries),
     }
@@ -257,16 +272,19 @@ def _phase_coupling(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str,
 
     results = []
     graph = build_dep_graph(path)
+    zm = lang._zone_map
 
     # Single-use (shared helper)
     single_entries, single_candidates = detect_single_use_abstractions(
         path, graph, barrel_names=lang.barrel_names)
+    single_entries = filter_entries(zm, single_entries, "single_use")
     results.extend(make_single_use_findings(single_entries, lang.get_area,
                                              skip_dir_names={"commands"}, stderr_fn=log))
     shared_prefix = f"{SRC_PATH}/shared/"
     tools_prefix = f"{SRC_PATH}/tools/"
     coupling_entries, coupling_edges = detect_coupling_violations(
         path, graph, shared_prefix=shared_prefix, tools_prefix=tools_prefix)
+    coupling_entries = filter_entries(zm, coupling_entries, "coupling")
     for e in coupling_entries:
         results.append(make_finding(
             "coupling", e["file"], e["target"],
@@ -283,6 +301,7 @@ def _phase_coupling(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str,
     # TS-specific: cross-tool imports
     cross_tool, cross_edges = detect_cross_tool_imports(
         path, graph, tools_prefix=tools_prefix)
+    cross_tool = filter_entries(zm, cross_tool, "coupling")
     for e in cross_tool:
         results.append(make_finding(
             "coupling", e["file"], e["target"],
@@ -296,6 +315,7 @@ def _phase_coupling(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str,
 
     # Cycles + orphaned (shared helpers)
     cycle_entries, _ = detect_cycles(graph)
+    cycle_entries = filter_entries(zm, cycle_entries, "cycles", file_key="files")
     results.extend(make_cycle_findings(cycle_entries, log))
     orphan_entries, total_graph_files = detect_orphaned_files(
         path, graph, extensions=lang.extensions,
@@ -303,11 +323,13 @@ def _phase_coupling(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str,
         extra_barrel_names=lang.barrel_names,
         dynamic_import_finder=build_dynamic_import_targets,
         alias_resolver=ts_alias_resolver)
+    orphan_entries = filter_entries(zm, orphan_entries, "orphaned")
     results.extend(make_orphaned_findings(orphan_entries, log))
 
     # Re-export facades (shared detector)
     from ...detectors.facade import detect_reexport_facades
     facade_entries, _ = detect_reexport_facades(graph, lang="typescript")
+    facade_entries = filter_entries(zm, facade_entries, "facade")
     results.extend(make_facade_findings(facade_entries, log))
 
     # TS-specific: pattern consistency
@@ -337,13 +359,13 @@ def _phase_coupling(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str,
         ))
     log(f"         → {len(results)} coupling/structural findings total")
     potentials = {
-        "single_use": single_candidates,
+        "single_use": adjust_potential(zm, single_candidates),
         "coupling": coupling_edges + cross_edges,
-        "cycles": total_graph_files,
-        "orphaned": total_graph_files,
+        "cycles": adjust_potential(zm, total_graph_files),
+        "orphaned": adjust_potential(zm, total_graph_files),
         "patterns": total_areas,
         "naming": total_dirs,
-        "facade": total_graph_files,
+        "facade": adjust_potential(zm, total_graph_files),
     }
     return results, potentials
 
@@ -366,7 +388,10 @@ def _phase_smells(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, i
         ))
     if react_entries:
         log(f"         react: {len(react_entries)} state sync anti-patterns")
-    return results, {"smells": total_smell_files, "react": total_effects}
+    return results, {
+        "smells": adjust_potential(lang._zone_map, total_smell_files),
+        "react": total_effects,
+    }
 
 
 def _get_ts_fixers() -> dict[str, FixerConfig]:
@@ -438,4 +463,5 @@ class TypeScriptConfig(LangConfig):
             large_threshold=500,
             complexity_threshold=15,
             extract_functions=_ts_extract_functions,
+            zone_rules=TS_ZONE_RULES,
         )

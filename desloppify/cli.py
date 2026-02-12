@@ -8,7 +8,7 @@ from pathlib import Path
 from .utils import DEFAULT_PATH, PROJECT_ROOT
 
 
-QUERY_FILE = Path(".desloppify/query.json")
+QUERY_FILE = PROJECT_ROOT / ".desloppify" / "query.json"
 
 
 def _write_query(data: dict):
@@ -68,6 +68,8 @@ workflow:
   show <pattern>                Dig into findings by file/dir/detector/ID
   resolve <pattern> <status>    Mark findings as fixed/wontfix/false_positive
   ignore <pattern>              Suppress findings matching a pattern
+  zone show                     Show zone classifications for all files
+  zone set <file> <zone>        Override zone for a file
   plan                          Generate prioritized markdown plan
 
 examples:
@@ -190,6 +192,17 @@ def create_parser() -> argparse.ArgumentParser:
     p_move.add_argument("dest", type=str, help="Destination path (file or directory)")
     p_move.add_argument("--dry-run", action="store_true", help="Show changes without modifying files")
 
+    p_zone = sub.add_parser("zone", help="Show/set/clear zone classifications")
+    p_zone.add_argument("--path", type=str, default=None)
+    p_zone.add_argument("--state", type=str, default=None)
+    zone_sub = p_zone.add_subparsers(dest="zone_action")
+    z_show = zone_sub.add_parser("show", help="Show zone classifications for all files")
+    z_set = zone_sub.add_parser("set", help="Override zone for a file")
+    z_set.add_argument("zone_path", type=str, help="Relative file path")
+    z_set.add_argument("zone_value", type=str, help="Zone (production, test, config, generated, script, vendor)")
+    z_clear = zone_sub.add_parser("clear", help="Remove zone override for a file")
+    z_clear.add_argument("zone_path", type=str, help="Relative file path")
+
     return parser
 
 
@@ -261,6 +274,9 @@ def main():
     elif args.command == "move":
         from .commands.move import cmd_move
         commands["move"] = cmd_move
+    elif args.command == "zone":
+        from .commands.zone_cmd import cmd_zone
+        commands["zone"] = cmd_zone
 
     try:
         commands[args.command](args)

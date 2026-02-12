@@ -133,6 +133,33 @@ The narrative `actions` list tells you which tool to suggest. Follow the `type`:
 - When auto-fixers exist for open findings, ask why they haven't been run.
 - Push for structural refactors over individual finding fixes when T3/T4 dominate.
 
+## Zone Classification
+
+Every file is classified into a **zone** based on path patterns — deterministic, no LLM involved.
+
+| Zone | Examples | Scoring | Detection |
+|------|----------|---------|-----------|
+| **production** | Application source code (default) | Full weight | All detectors |
+| **test** | `test_*.py`, `*.test.ts`, `__tests__/` | Excluded | Skips dupes, single_use, orphaned, coupling, facade |
+| **config** | `vite.config.ts`, `setup.py`, `tsconfig.json` | Excluded | Skips most detectors |
+| **generated** | `*.d.ts`, `_pb2.py`, `/migrations/` | Excluded | All detectors skipped |
+| **script** | `/scripts/`, `/bin/`, `__main__.py` | Included | Skips coupling, single_use, orphaned, facade |
+| **vendor** | Vendored third-party code | Excluded | All detectors skipped |
+
+Zone metadata appears on each finding in `query.json` (the `"zone"` field).
+Test/config/generated/vendor findings are **informational only** — they don't affect the health score.
+
+### Zone Commands
+
+```bash
+desloppify zone show                           # list all files with their zones
+desloppify zone set <rel-path> production      # override a misclassification
+desloppify zone clear <rel-path>               # remove an override
+```
+
+If a file is misclassified (e.g. a production `config.py` showing as config zone),
+use `zone set` to override it. Overrides persist in state and survive rescans.
+
 ## Tips
 
 - Always `--dry-run` before applying fixers

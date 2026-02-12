@@ -25,6 +25,7 @@ CONFIDENCE_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 def generate_findings(
     path: Path, *, include_slow: bool = True, lang=None,
+    zone_overrides: dict[str, str] | None = None,
 ) -> tuple[list[dict], dict[str, int]]:
     """Run all detectors and convert results to normalized findings.
 
@@ -37,14 +38,27 @@ def generate_findings(
         from .utils import PROJECT_ROOT
         detected = auto_detect_lang(PROJECT_ROOT)
         lang = get_lang(detected or "typescript")
-    return _generate_findings_from_lang(path, lang, include_slow=include_slow)
+    return _generate_findings_from_lang(path, lang, include_slow=include_slow,
+                                         zone_overrides=zone_overrides)
 
 
 def _generate_findings_from_lang(
     path: Path, lang, *, include_slow: bool = True,
+    zone_overrides: dict[str, str] | None = None,
 ) -> tuple[list[dict], dict[str, int]]:
     """Run detector phases from a LangConfig."""
     stderr = lambda msg: print(c(msg, "dim"), file=sys.stderr)
+
+    # Build zone map if language has zone rules
+    if lang.zone_rules and lang.file_finder:
+        from .zones import FileZoneMap, ZONE_POLICIES
+        from .utils import rel
+        files = lang.file_finder(path)
+        lang._zone_map = FileZoneMap(files, lang.zone_rules, rel_fn=rel,
+                                      overrides=zone_overrides)
+        counts = lang._zone_map.counts()
+        zone_str = ", ".join(f"{z}: {n}" for z, n in sorted(counts.items()) if n > 0)
+        stderr(f"  Zones: {zone_str}")
 
     phases = lang.phases
     if not include_slow:
@@ -63,9 +77,16 @@ def _generate_findings_from_lang(
             phase_findings = result  # backward compat
         findings += phase_findings
 
-    # Stamp language on all findings so state can scope by language
+    # Stamp language and zone on all findings
     for f in findings:
         f["lang"] = lang.name
+        if lang._zone_map is not None:
+            zone = lang._zone_map.get(f.get("file", ""))
+            f["zone"] = zone.value
+            # Apply zone policy confidence downgrades
+            policy = ZONE_POLICIES.get(zone)
+            if policy and f.get("detector") in policy.downgrade_detectors:
+                f["confidence"] = "low"
 
     stderr(f"\n  Total: {len(findings)} findings")
     return findings, all_potentials
