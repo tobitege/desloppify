@@ -52,7 +52,7 @@ def extract_py_functions(filepath: str) -> list[FunctionInfo]:
 
     lines = content.splitlines()
     functions = []
-    fn_re = re.compile(r"^(\s*)def\s+(\w+)\s*\(")
+    fn_re = re.compile(r"^(\s*)(?:async\s+)?def\s+(\w+)\s*\(")
 
     i = 0
     while i < len(lines):
@@ -71,6 +71,13 @@ def extract_py_functions(filepath: str) -> list[FunctionInfo]:
             i += 1
             continue
 
+        # Extract params from multi-line signature
+        sig_text = "\n".join(lines[start_line:j + 1])
+        open_paren = sig_text.index("(")
+        close_paren = sig_text.rindex(")")
+        param_str = sig_text[open_paren + 1:close_paren]
+        params = extract_py_params(param_str)
+
         # Find body extent: all lines indented past fn_indent, trim trailing blanks
         block_end = _find_block_end(lines, j + 1, fn_indent)
         end_line = block_end
@@ -85,6 +92,7 @@ def extract_py_functions(filepath: str) -> list[FunctionInfo]:
                 end_line=end_line, loc=end_line - start_line, body=body,
                 normalized=normalized,
                 body_hash=hashlib.md5(normalized.encode()).hexdigest(),
+                params=params,
             ))
         i = end_line
 
@@ -183,7 +191,7 @@ def _extract_methods(lines: list[str], start: int, end: int,
                      class_indent: int) -> list[FunctionInfo]:
     """Extract methods from a class body as FunctionInfo objects."""
     methods = []
-    method_re = re.compile(r"^\s+def\s+(\w+)")
+    method_re = re.compile(r"^\s+(?:async\s+)?def\s+(\w+)")
 
     i = start
     while i < end:

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import defaultdict
 
 from .base import FunctionInfo
-from ..utils import rel
 
 
 # Names that are legitimately polymorphic — skip them
@@ -43,7 +42,7 @@ def detect_signature_variance(
             continue  # Skip private functions — expected to be independent
         if fn.name in _ALLOWLIST:
             continue
-        if fn.name.startswith("test_") or fn.name.startswith("test"):
+        if fn.name.startswith("test_"):
             continue  # Skip test functions
         by_name[fn.name].append(fn)
 

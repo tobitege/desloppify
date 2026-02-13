@@ -196,7 +196,7 @@ def create_parser() -> argparse.ArgumentParser:
     p_zone.add_argument("--path", type=str, default=None)
     p_zone.add_argument("--state", type=str, default=None)
     zone_sub = p_zone.add_subparsers(dest="zone_action")
-    z_show = zone_sub.add_parser("show", help="Show zone classifications for all files")
+    zone_sub.add_parser("show", help="Show zone classifications for all files")
     z_set = zone_sub.add_parser("set", help="Override zone for a file")
     z_set.add_argument("zone_path", type=str, help="Relative file path")
     z_set.add_argument("zone_value", type=str, help="Zone (production, test, config, generated, script, vendor)")

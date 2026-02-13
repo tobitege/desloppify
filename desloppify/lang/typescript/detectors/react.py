@@ -7,6 +7,7 @@ from pathlib import Path
 from ....utils import PROJECT_ROOT, c, find_tsx_files, print_table, rel
 
 MAX_EFFECT_BODY = 1000  # max characters to scan for brace-matching a useEffect callback
+MAX_FUNC_SCAN = 2000    # max lines to scan for function body extent
 
 
 def detect_state_sync(path: Path) -> tuple[list[dict], int]:
@@ -118,7 +119,6 @@ def detect_context_nesting(path: Path) -> tuple[list[dict], int]:
     entries = []
     total_files = 0
     provider_open = re.compile(r"<(\w+Provider)\b(?!.*/>)")  # opening, not self-closing
-    provider_self = re.compile(r"<(\w+Provider)\b.*/>")       # self-closing
     provider_close = re.compile(r"</(\w+Provider)\s*>")
 
     for filepath in find_tsx_files(path):
@@ -199,7 +199,7 @@ def detect_hook_return_bloat(path: Path) -> tuple[list[dict], int]:
             depth = 0
             found_open = False
             func_end = None
-            for j in range(brace_line, min(brace_line + 2000, len(lines))):
+            for j in range(brace_line, min(brace_line + MAX_FUNC_SCAN, len(lines))):
                 in_str = None
                 prev_ch = ""
                 for ch in lines[j]:
@@ -249,7 +249,6 @@ def _count_return_fields(func_body: str) -> int | None:
     # Find all "return" positions at depth 1
     lines = func_body.splitlines()
     depth = 0
-    found_open = False
     return_positions: list[int] = []
 
     for i, line in enumerate(lines):
@@ -265,7 +264,6 @@ def _count_return_fields(func_body: str) -> int | None:
                 in_str = ch
             elif ch == "{":
                 depth += 1
-                found_open = True
             elif ch == "}":
                 depth -= 1
             prev_ch = ch
@@ -319,8 +317,6 @@ def _count_return_fields(func_body: str) -> int | None:
         field_count += 1
     else:
         # Check if there's any content at all (single field, no comma)
-        obj_start = ret_text.find("{", brace_start) + 1
-        # Find matching close
         obj_content = ""
         d = 0
         for ch in ret_text[brace_start:]:

@@ -120,7 +120,6 @@ def _show_score_delta(state: dict, prev_score: float, prev_strict: float,
 
 def _show_post_scan_analysis(diff: dict, state: dict, lang) -> tuple[list[str], str | None, dict]:
     """Print warnings, narrative headline, and top action. Returns (warnings, narrative)."""
-    stats = state["stats"]
     warnings = []
     if diff["reopened"] > 5:
         warnings.append(f"{diff['reopened']} findings reopened — was a previous fix reverted? Check: git log --oneline -5")

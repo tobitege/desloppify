@@ -7,7 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ....utils import PROJECT_ROOT, find_py_files, rel
+from ....utils import PROJECT_ROOT, find_py_files
 
 # ── Data structures ───────────────────────────────────────
 

@@ -6,7 +6,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from ....utils import (PROJECT_ROOT, SRC_PATH, c, grep_files,
+from ....utils import (SRC_PATH, c, grep_files,
                        grep_files_containing, print_table, rel, resolve_path)
 
 
