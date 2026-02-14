@@ -435,8 +435,15 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
     project_name = _get_project_name()
 
     # Layout — landscape (wide), File health first
+    # Exclude unassessed review dimensions (score=0, issues=0) — they're placeholders
     active_dims = [
-        (name, data) for name, data in dim_scores.items() if data.get("checks", 0) > 0
+        (name, data) for name, data in dim_scores.items()
+        if data.get("checks", 0) > 0
+        and not (
+            "review_assessment" in data.get("detectors", {})
+            and data.get("score", 0) == 0
+            and data.get("issues", 0) == 0
+        )
     ]
     active_dims.sort(key=lambda x: (0 if x[0] == "File health" else 1, x[0]))
     row_count = len(active_dims)
