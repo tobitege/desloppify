@@ -271,12 +271,12 @@ Example:
 
 ```bash
 desloppify --lang csharp detect deps --path . \
-  --lang-opt "roslyn_cmd=dotnet run --project contrib/csharp/RoslynGraphEmitter/RoslynGraphEmitter.csproj -- {path}"
+  --lang-opt "roslyn_cmd=dotnet run --project /path/to/your/RoslynGraphEmitter.csproj -- {path}"
 ```
 
 Sample emitter:
 
-- `contrib/csharp/RoslynGraphEmitter/` (adapt to your repo/build setup)
+- Use any external Roslyn-based emitter in your own repo/build setup.
 
 Graph node shape (same shape expected by shared graph detectors):
 
@@ -561,12 +561,12 @@ Common commands:
 ```bash
 desloppify --lang csharp scan --path .
 desloppify --lang csharp scan --profile full --path .
-desloppify --lang csharp scan --path . --lang-opt "roslyn_cmd=dotnet run --project contrib/csharp/RoslynGraphEmitter/RoslynGraphEmitter.csproj -- {path}"
+desloppify --lang csharp scan --path . --lang-opt "roslyn_cmd=dotnet run --project /path/to/your/RoslynGraphEmitter.csproj -- {path}"
 desloppify --lang csharp status
 desloppify --lang csharp next
 desloppify --lang csharp show .
 desloppify --lang csharp detect deps --path .
-desloppify --lang csharp detect deps --path . --lang-opt "roslyn_cmd=dotnet run --project contrib/csharp/RoslynGraphEmitter/RoslynGraphEmitter.csproj -- {path}"
+desloppify --lang csharp detect deps --path . --lang-opt "roslyn_cmd=dotnet run --project /path/to/your/RoslynGraphEmitter.csproj -- {path}"
 desloppify --lang csharp detect cycles --path .
 desloppify --lang csharp detect orphaned --path .
 desloppify --lang csharp detect dupes --path .
