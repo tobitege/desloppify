@@ -84,9 +84,7 @@ def test_scaffold_lang_wires_pyproject_once(tmp_path, monkeypatch):
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(
         "[tool.setuptools.packages.find]\n"
-        "exclude = [\n"
-        "  \"existing\",\n"
-        "]\n\n"
+        "exclude = [\"existing\"]\n\n"
         "[tool.pytest.ini_options]\n"
         "testpaths = [\n"
         "  \"tests\",\n"
@@ -95,10 +93,10 @@ def test_scaffold_lang_wires_pyproject_once(tmp_path, monkeypatch):
 
     dev_mod.cmd_dev(_args(wire_pyproject=True))
     first = pyproject.read_text()
-    assert 'desloppify.lang.ruby.tests*' in first
+    assert 'desloppify.lang.ruby.tests*' not in first
     assert 'desloppify/lang/ruby/tests' in first
 
     dev_mod.cmd_dev(_args(force=True, wire_pyproject=True))
     second = pyproject.read_text()
-    assert second.count('desloppify.lang.ruby.tests*') == 1
+    assert second.count('desloppify.lang.ruby.tests*') == 0
     assert second.count('desloppify/lang/ruby/tests') == 1

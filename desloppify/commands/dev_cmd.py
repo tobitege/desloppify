@@ -220,11 +220,6 @@ def _wire_pyproject(lang_name: str) -> bool:
     updated = original
     updated = _append_toml_array_item(
         updated,
-        "exclude",
-        f"desloppify.lang.{lang_name}.tests*",
-    )
-    updated = _append_toml_array_item(
-        updated,
         "testpaths",
         f"desloppify/lang/{lang_name}/tests",
     )

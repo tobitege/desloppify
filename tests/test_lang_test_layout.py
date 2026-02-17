@@ -31,11 +31,11 @@ def test_pyproject_discovers_lang_test_paths():
         assert _lang_test_rel_path(lang) in testpaths
 
 
-def test_pyproject_excludes_lang_tests_from_packages():
+def test_pyproject_does_not_exclude_lang_tests_from_packages():
     data = _load_pyproject()
-    excludes = data["tool"]["setuptools"]["packages"]["find"]["exclude"]
+    excludes = data["tool"]["setuptools"]["packages"]["find"].get("exclude", [])
     for lang in available_langs():
-        assert _lang_test_exclude(lang) in excludes
+        assert _lang_test_exclude(lang) not in excludes
 
 
 def test_each_lang_has_colocated_tests_package():
@@ -80,4 +80,3 @@ def test_compute_tool_hash_ignores_colocated_tests(tmp_path):
         runtime_file.write_text("x = 2\n")
         after_runtime_edit = compute_tool_hash()
         assert after_runtime_edit != base
-
