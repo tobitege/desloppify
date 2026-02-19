@@ -31,8 +31,14 @@ def test_pyproject_discovers_lang_test_paths():
 def test_pyproject_excludes_tests_from_packages():
     data = _load_pyproject()
     excludes = data["tool"]["setuptools"]["packages"]["find"].get("exclude", [])
-    assert "*.tests" in excludes
-    assert "*.tests.*" in excludes
+    # Only the top-level test suite should be excluded — language plugin
+    # tests/ dirs must be included in the wheel for structure_validation.py.
+    assert "desloppify.tests" in excludes
+    assert "desloppify.tests.*" in excludes
+    # The old wildcard pattern must NOT be present — it excluded language
+    # plugin tests/ dirs from the wheel, breaking plugin discovery.
+    assert "*.tests" not in excludes
+    assert "*.tests.*" not in excludes
 
 
 def test_each_lang_has_colocated_tests_dir():
